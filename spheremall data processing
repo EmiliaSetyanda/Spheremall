@@ -68,6 +68,7 @@ merged.data <- merged.data %>% mutate(value = 1) %>% spread(productName, value, 
 
 #train and test data of 70-30 (without one hot encoding)
 sample_size <- floor(0.7*nrow(fullpurchase.data))
+set.seed(123)
 train_ind <- sample(1:nrow(fullpurchase.data), size=sample_size)
 train.data <- fullpurchase.data[train_ind,]
 validation.data <- fullpurchase.data[-train_ind,]
@@ -76,4 +77,8 @@ validation.data <- fullpurchase.data[-train_ind,]
 train.data <- data_memory(user_index = train$accountNr, item_index = )
 
 #######-----------------TRY TRAINING WITH A PORTION OF THE DATA------------------
+portion <- floor(0.001*nrow(train.data))
+set.seed(123)
+portion_ind <- sample(1:nrow(train.data), size=portion)
+portioned.data <- train.data[portion_ind,]
 
