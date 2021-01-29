@@ -66,10 +66,14 @@ dummy <- dummyVars(" ~ .", data=useritem.data)
 newdata <- data.frame(predict(dummy, newdata = useritem.data)) 
 merged.data <- merged.data %>% mutate(value = 1) %>% spread(productName, value,  fill = 0 ) 
 
-#train and test data of 90-10 (without one hot encoding)
+#train and test data of 70-30 (without one hot encoding)
 sample_size <- floor(0.7*nrow(fullpurchase.data))
 train_ind <- sample(1:nrow(fullpurchase.data), size=sample_size)
 train.data <- fullpurchase.data[train_ind,]
 validation.data <- fullpurchase.data[-train_ind,]
 
+#MF using recosystem package 
 train.data <- data_memory(user_index = train$accountNr, item_index = )
+
+#######-----------------TRY TRAINING WITH A PORTION OF THE DATA------------------
+
