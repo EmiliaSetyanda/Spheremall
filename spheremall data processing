@@ -1,0 +1,75 @@
+#load used packages
+library(recosystem)
+library(caret)
+library(mltools)
+library(data.table)
+
+#import datasets
+AccountCreation <- read.csv("~/University/DSMA Master/Seminar Case Study Spheremall/Spheremall data/AccountCreation.csv")
+CodeEntry <- read.csv("~/University/DSMA Master/Seminar Case Study Spheremall/Spheremall data/CodeEntry.csv")
+ShopOrders <- read.csv("~/University/DSMA Master/Seminar Case Study Spheremall/Spheremall data/ShopOrders.csv")
+
+#merge AccountCreation and ShopOrders and change the variables types
+mergeAccountShop <- merge(AccountCreation, ShopOrders, by = "accountNr", all = TRUE)
+mergeAccountShop <- mergeAccountShop[,-c(2,7)] #remove the first column from each dataset as it's not important
+str(mergeAccountShop)
+mergeAccountShop$dateOfBirth <- as.Date(mergeAccountShop$dateOfBirth, format="%Y-%m-%d")
+mergeAccountShop$Account.creation <- ymd_hms(mergeAccountShop$created.x, truncated = 3)
+mergeAccountShop$Order.creation <- ymd_hms(mergeAccountShop$created.y, truncated = 3)
+mergeAccountShop$gender <- factor(mergeAccountShop$gender)
+mergeAccountShop$deleted <- factor(mergeAccountShop$deleted)
+mergeAccountShop$productCategory <- factor(mergeAccountShop$productCategory)
+mergeAccountShop$productGroup <- factor(mergeAccountShop$productGroup)
+mergeAccountShop$productName <- factor(mergeAccountShop$productName)
+mergeAccountShop$brandName <- factor(mergeAccountShop$brandName)
+mergeAccountShop$websiteBrandPurchased <- factor(mergeAccountShop$websiteBrandPurchased)
+mergeAccountShop <- mergeAccountShop[,-c(5,12)] #remove the account and shop order creation dates as the new ones have been created above
+
+#to check if deleted accounts have also bought something in the past 
+mergeAccountShop %>%
+  filter(deleted == 1) %>%
+  summary() #there are 810027 deleted accounts and around 753486 of them don't seem to have made any purchase
+
+summary(mergeAccountShop)
+
+#trying to delete the useless observations (with no demographics and no purchase)
+merged.data <- mergeAccountShop
+index <- which(merged.data$deleted==1 & is.na(merged.data$productCategory))
+merged.data <- merged.data[-index,]
+summary(merged.data)
+
+#compute the age from date of birth (using current date of 29 January 2021)
+age = function(from, to) {
+  from_lt = as.POSIXlt(from)
+  to_lt = as.POSIXlt(to)
+  
+  age = to_lt$year - from_lt$year
+  
+  ifelse(to_lt$mon < from_lt$mon |
+           (to_lt$mon == from_lt$mon & to_lt$mday < from_lt$mday),
+         age - 1, age)
+}
+current.date <- "2021-01-29"
+merged.data$age <- age(merged.data$dateOfBirth,current.date)
+
+#nopurchase.testdata: for the test data that contains only users who have NOT purchased anything
+nopurchase.testdata <- merged.data[is.na(merged.data$productName),]
+
+#fullpurchase.data: for the full purchase data that contains only users who have purchased something 
+#remove the productName that are NAs
+fullpurchase.data <- merged.data[!is.na(merged.data$productName),]
+
+#one hot encoding for productName
+useritem.data <- merged.data[,c(1,5)]
+newdata <- one_hot(as.data.table(useritem.data))
+dummy <- dummyVars(" ~ .", data=useritem.data)
+newdata <- data.frame(predict(dummy, newdata = useritem.data)) 
+merged.data <- merged.data %>% mutate(value = 1) %>% spread(productName, value,  fill = 0 ) 
+
+#train and test data of 90-10 (without one hot encoding)
+sample_size <- floor(0.7*nrow(fullpurchase.data))
+train_ind <- sample(1:nrow(fullpurchase.data), size=sample_size)
+train.data <- fullpurchase.data[train_ind,]
+validation.data <- fullpurchase.data[-train_ind,]
+
+train.data <- data_memory(user_index = train$accountNr, item_index = )
