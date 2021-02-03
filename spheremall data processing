@@ -1,13 +1,16 @@
 #load used packages
+library(tidyverse)
 library(recosystem)
 library(caret)
 library(mltools)
 library(data.table)
+library(lubridate)
 
 #import datasets
 AccountCreation <- read.csv("~/University/DSMA Master/Seminar Case Study Spheremall/Spheremall data/AccountCreation.csv")
 CodeEntry <- read.csv("~/University/DSMA Master/Seminar Case Study Spheremall/Spheremall data/CodeEntry.csv")
 ShopOrders <- read.csv("~/University/DSMA Master/Seminar Case Study Spheremall/Spheremall data/ShopOrders.csv")
+recomdata2 <- read.csv("C:/Users/emili/Downloads/recomdata2.csv")
 
 #merge AccountCreation and ShopOrders and change the variables types
 mergeAccountShop <- merge(AccountCreation, ShopOrders, by = "accountNr", all = TRUE)
@@ -24,6 +27,21 @@ mergeAccountShop$productName <- factor(mergeAccountShop$productName)
 mergeAccountShop$brandName <- factor(mergeAccountShop$brandName)
 mergeAccountShop$websiteBrandPurchased <- factor(mergeAccountShop$websiteBrandPurchased)
 mergeAccountShop <- mergeAccountShop[,-c(5,12)] #remove the account and shop order creation dates as the new ones have been created above
+summary(mergeAccountShop)
+
+#compute the age from date of birth (using current date of 29 January 2021)
+age = function(from, to) {
+  from_lt = as.POSIXlt(from)
+  to_lt = as.POSIXlt(to)
+  
+  age = to_lt$year - from_lt$year
+  
+  ifelse(to_lt$mon < from_lt$mon |
+           (to_lt$mon == from_lt$mon & to_lt$mday < from_lt$mday),
+         age - 1, age)
+}
+current.date <- "2021-01-29"
+mergeAccountShop$age <- age(mergeAccountShop$dateOfBirth,current.date)
 
 #to check if deleted accounts have also bought something in the past 
 mergeAccountShop %>%
@@ -32,11 +50,65 @@ mergeAccountShop %>%
 
 summary(mergeAccountShop)
 
-#trying to delete the useless observations (with no demographics and no purchase)
-merged.data <- mergeAccountShop
-index <- which(merged.data$deleted==1 & is.na(merged.data$productCategory))
-merged.data <- merged.data[-index,]
-summary(merged.data)
+#delete the rows without any useful info at all (no purchase, no demographics)
+levels(mergeAccountShop$gender) <- c(NA, "f", "m")
+index <- which(is.na(mergeAccountShop$productName) & is.na(mergeAccountShop$gender) & is.na(mergeAccountShop$age))
+mergeAccountShop <- mergeAccountShop[-index,]
+
+#SPLIT FIRST BEFORE IMPUTING
+index2 <- which(is.na(mergeAccountShop$productName))
+nopurchase.testdata <- mergeAccountShop[index2, ]
+summary(nopurchase.testdata)
+fullpurchase.data <- mergeAccountShop[-index2, ]
+summary(fullpurchase.data)
+  
+###imputing NAs in the NOPURCHASE.TESTDATA for gender and age
+nopurchase.testdata$gender[is.na(nopurchase.testdata$gender)] = "f"
+
+nopurchase.testdata$age <- ifelse(nopurchase.testdata$age < 18 | nopurchase.testdata$age > 99, NA, nopurchase.testdata$age)
+names(sort(-table(nopurchase.testdata$age)))[1] #to find the mode of age: 40
+nopurchase.testdata$age <- ifelse(is.na(nopurchase.testdata$age), 45, nopurchase.testdata$age)
+
+#create age range in NOPURCHASE.TESTDATA
+nopurchase.testdata$agerange <- ifelse(nopurchase.testdata$age<=35,"adulthood",ifelse(nopurchase.testdata$age<=55&nopurchase.testdata$age>35,"middle age","older age"))
+nopurchase.testdata$agerange <- factor(nopurchase.testdata$agerange)
+
+###imputing NAs in the FULLPURCHASE.DATA for gender and age
+fullpurchase.data$gender[is.na(fullpurchase.data$gender)] = "f"
+
+fullpurchase.data$age <- ifelse(fullpurchase.data$age < 18 | fullpurchase.data$age > 99, NA, fullpurchase.data$age)
+names(sort(-table(fullpurchase.data$age)))[1] #to find the mode of age: 40
+fullpurchase.data$age <- ifelse(is.na(fullpurchase.data$age), 45, fullpurchase.data$age)
+
+#create age range and purchaseweek and purchasemonth in FULLPURCHASE.DATA 
+fullpurchase.data$agerange <- ifelse(fullpurchase.data$age<=35,"adulthood",ifelse(fullpurchase.data$age<=55&fullpurchase.data$age>35,"middle age","older age"))
+fullpurchase.data$agerange <- factor(fullpurchase.data$agerange)
+
+fullpurchase.data$purchaseweek <- week(fullpurchase.data$Order.creation)
+fullpurchase.data$purchasemonth <- month(fullpurchase.data$Order.creation)
+
+#add purchase freq to the purchase.data     
+purchase.data <- fullpurchase.data[,c(1,3,5:10,13:16)]
+purchase.data <- purchase.data %>% 
+  group_by(accountNr,gender,productGroup,age, agerange, purchasemonth)%>%
+  summarize(n=n())
+colnames(purchase.data) <- c("user_id", "gender", "item_id", "age", "agerange", "purchasemonth", "purchase_frequency")
+
+#exporting data to csv
+write.csv(nopurchase.testdata, "nopurchase.testdata.csv")
+write.csv(fullpurchase.data, "fullpurchase.data.csv")
+write.csv(purchase.data, "purchase.data.csv")
+
+###########-----------PREVIOUS CODE-----------------------------------------
+#add purchase freq to the purchase.data     
+purchase.data <- fullpurchase.data[,c(1,3,5:10,13:15)]
+purchase.data <- purchase.data %>% 
+  group_by(accountNr,gender,productName, productGroup,age, agerange)%>%
+  summarize(n=n())
+colnames(purchase.data) <- c("user_id", "gender", "item_id", "item_group", "age", "agerange", "purchase_frequency")
+
+#retain only accounts with order creation date above 2014-01-01 00:48:00
+merged.data <- merged.data[merged.data$Order.creation >= "2014-01-01 00:48:00",]
 
 #compute the age from date of birth (using current date of 29 January 2021)
 age = function(from, to) {
@@ -82,3 +154,51 @@ set.seed(123)
 portion_ind <- sample(1:nrow(train.data), size=portion)
 portioned.data <- train.data[portion_ind,]
 
+#one hot encoding for productName
+memory.limit(size=56000)
+useritem.data <- portioned.data[,c(1,5)]
+newdata <- one_hot(as.data.table(useritem.data))
+try <- gather(newdata, "product", "rating", 2:10239)
+try$product <- factor(try$product)
+another.portion <- floor(0.001*nrow(try))
+set.seed(123)
+try.portion <- sample(1:nrow(try), size=another.portion)
+try.portioned <- try[try.portion,]
+
+try.train <- data_memory(user_index=try.portioned$accountNr, item_index = try.portioned$product, rating = try.portioned$rating, index1 = T)
+recommender = Reco()
+opts = recommender$tune(try.train, opts = list(dim = c(10, 20, 30), lrate = c(0.05, 0.1, 0.2),
+                                    nthread = 1, niter = 10))
+opts
+recommender$train(try.train, opts = c(opts$min, nthread = 1, niter = 10))
+
+#don't use them 
+dummy <- dummyVars(" ~ .", data=useritem.data)
+newdata <- data.frame(predict(dummy, newdata = useritem.data)) 
+merged.data <- merged.data %>% mutate(value = 1) %>% spread(productName, value,  fill = 0 ) 
+try<- melt(data = newdata, id.vars = c("accountNr"), variable.name = "product")
+
+#############-------------FIXING DATA FOR PYTHON---------------------------
+recomdata2 <- recomdata2[,-1]
+str(recomdata2)
+summary(recomdata2)
+recomdata2$user_id <- factor(recomdata2$user_id)
+recomdata2$item_id <- factor(recomdata2$item_id)
+recomdata2$age <- factor(recomdata2$age)
+recomdata2$time <- as.numeric(recomdata2$age)
+recomdata2$gender <- factor(recomdata2$gender)
+recomdata2$ratings <- 1
+
+vars <- 4
+normalize <- function(x)
+{
+  return((x- min(x)) /(max(x)-min(x)))
+}
+for (i in vars) {
+  recomdata2[,i] <- as.data.frame(lapply(recomdata2[,i], normalize))
+}
+
+recomdata2$time <- lapply(recomdata2$time, normalize)
+# To get a vector, use apply instead of lapply
+as.data.frame(lapply(recomdata2$time, normalize))
+recomdata2$time <- lapply(recomdata2$time, normalize)
