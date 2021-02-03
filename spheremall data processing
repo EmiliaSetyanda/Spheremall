@@ -94,6 +94,11 @@ purchase.data <- purchase.data %>%
   summarize(n=n())
 colnames(purchase.data) <- c("user_id", "gender", "item_id", "age", "agerange", "purchasemonth", "purchase_frequency")
 
+median <- aggregate(purchase_frequency ~ item_id, FUN=median, data=purchase.data)
+purchase.data$median <- ifelse(!(purchase.data$item_id == "servies"), 1,2)
+purchase.data$purchase_category <- ifelse(purchase.data$purchase_frequency <= purchase.data$median, 1, 2)
+purchase.data$purchase_category <- factor(purchase.data$purchase_category)
+
 #exporting data to csv
 write.csv(nopurchase.testdata, "nopurchase.testdata.csv")
 write.csv(fullpurchase.data, "fullpurchase.data.csv")
